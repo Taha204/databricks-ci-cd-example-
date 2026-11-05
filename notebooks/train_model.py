@@ -36,6 +36,7 @@ def main():
     if on_databricks:
         mlflow.set_tracking_uri("databricks")
         mlflow.set_registry_uri("databricks-uc")
+        mlflow.set_experiment("/Users/mouradtaha52@gmail.com/iris-ci-cd")
 
     with mlflow.start_run() as run:
         model, accuracy, X_test = train_model()
