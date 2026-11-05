@@ -3,17 +3,16 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  tests:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -26,3 +25,20 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -q
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Pull latest code into Databricks Git folder
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_REPO_PATH: ${{ vars.DATABRICKS_REPO_PATH }}
+        run: databricks repos update "$DATABRICKS_REPO_PATH" --branch main
+
+      - name: Trigger Databricks Job
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_JOB_ID: ${{ vars.DATABRICKS_JOB_ID }}
+        run: databricks jobs run-now "$DATABRICKS_JOB_ID" --timeout 15m
