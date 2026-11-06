@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: iris-databricks-deploy
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,3 +29,34 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Verify Databricks authentication
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks current-user me
+
+      - name: Upload training script to Databricks
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_DEPLOY_DIR: ${{ vars.DATABRICKS_DEPLOY_DIR }}
+        run: |
+          : "${DATABRICKS_DEPLOY_DIR:?Set the DATABRICKS_DEPLOY_DIR repository variable}"
+          databricks workspace mkdirs "$DATABRICKS_DEPLOY_DIR"
+          databricks workspace import "$DATABRICKS_DEPLOY_DIR/train_model.py" \
+            --file notebooks/train_model.py \
+            --format RAW \
+            --overwrite
+
+      - name: Trigger Databricks Job
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_JOB_ID: ${{ vars.DATABRICKS_JOB_ID }}
+        run: |
+          : "${DATABRICKS_JOB_ID:?Set the DATABRICKS_JOB_ID repository variable}"
+          databricks jobs run-now "$DATABRICKS_JOB_ID"
