@@ -4,9 +4,6 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,27 +15,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
       - name: Run tests
-        run: python -m pytest tests/ -q
-
-      - name: Install Databricks CLI
-        uses: databricks/setup-cli@main
-
-      - name: Pull latest code into Databricks Git folder
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-          DATABRICKS_REPO_PATH: ${{ vars.DATABRICKS_REPO_PATH }}
-        run: databricks repos update "$DATABRICKS_REPO_PATH" --branch main
-
-      - name: Trigger Databricks Job
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-          DATABRICKS_JOB_ID: ${{ vars.DATABRICKS_JOB_ID }}
-        run: databricks jobs run-now "$DATABRICKS_JOB_ID" --timeout 15m
+        run: python -m pytest tests/ -v
