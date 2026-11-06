@@ -1,4 +1,7 @@
-# Databricks notebook source
+import os
+import tempfile
+from unittest.mock import patch
+
 import mlflow
 import mlflow.sklearn
 from mlflow.models import infer_signature
@@ -7,42 +10,72 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
+MODEL_NAME = "workspace.default.irisrfmodel_taha"
 
-def main(registered_model_name=None):
-    # Load data
-    iris = load_iris()
-    X = iris.data
-    y = iris.target
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+def train_model():
+    iris = load_iris(as_frame=True)
+    X_train, X_test, y_train, y_test = train_test_split(
+        iris.data,
+        iris.target,
+        test_size=0.2,
+        random_state=42,
+        stratify=iris.target,
+    )
 
-    # Train model
-    model = RandomForestClassifier(n_estimators=100)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    # Evaluate model
-    y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
+    accuracy = accuracy_score(y_test, model.predict(X_test))
+    return model, accuracy, X_test
 
-    # Log metrics and model with MLflow
-    with mlflow.start_run():
+
+def main():
+    on_databricks = bool(os.getenv("DATABRICKS_RUNTIME_VERSION"))
+
+    if on_databricks:
+        mlflow.set_tracking_uri("databricks")
+        mlflow.set_registry_uri("databricks-uc")
+        mlflow.set_experiment("/Users/mouradtaha52@gmail.com/iris-ci-cd")
+
+    with mlflow.start_run() as run:
+        model, accuracy, X_test = train_model()
+
+        mlflow.log_params({"n_estimators": 100, "random_state": 42})
         mlflow.log_metric("accuracy", accuracy)
-        model_info = mlflow.sklearn.log_model(
-            model,
-            artifact_path="random_forest_model",
-            signature=infer_signature(X_test, y_pred),
-        )
 
-        # Register the model when a Unity Catalog name is provided
-        if registered_model_name:
-            mlflow.set_registry_uri("databricks-uc")
-            version = mlflow.register_model(
-                model_info.model_uri,
-                registered_model_name,
-            )
-            print(f"Model registered: {version.name}, version {version.version}")
+        if on_databricks:
+            with tempfile.TemporaryDirectory(dir="/tmp", prefix="iris-mlflow-") as tmp:
+                with (
+                    patch.object(tempfile, "tempdir", tmp),
+                    patch(
+                        "mlflow.utils.file_utils.get_databricks_local_temp_dir",
+                        return_value=tmp,
+                        create=True,
+                    ),
+                    patch(
+                        "mlflow.utils.databricks_utils.get_databricks_local_temp_dir",
+                        return_value=tmp,
+                    ),
+                ):
+                    model_info = mlflow.sklearn.log_model(
+                        sk_model=model,
+                        name="random_forest_model",
+                        signature=infer_signature(X_test, model.predict(X_test)),
+                        input_example=X_test.head(3),
+                    )
+                    registered = mlflow.register_model(
+                        model_info.model_uri,
+                        MODEL_NAME,
+                    )
+
+            print(f"Modèle : {registered.name}")
+            print(f"Version : {registered.version}")
+
+        print(f"Accuracy : {accuracy:.4f}")
+        print(f"Run ID : {run.info.run_id}")
+        return run.info.run_id, accuracy
 
 
 if __name__ == "__main__":
-    main("workspace.default.IrisRFModel")
+    main()
